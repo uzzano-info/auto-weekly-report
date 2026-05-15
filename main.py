@@ -17,7 +17,7 @@ def main():
     today_str = datetime.now().strftime("%Y-%m-%d")
     
     # 2. 초기 상태 및 설정
-    initial_state = {"raw_data": "", "analyzed_data": "", "final_report": "", "messages": []}
+    initial_state = {"raw_data": "", "analyzed_data": "", "final_report": "", "messages": [], "risk_score": 0}
     config = {"configurable": {"thread_id": "cli_user_1"}}
     
     # 그래프 실행
