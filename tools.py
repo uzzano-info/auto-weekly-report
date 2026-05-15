@@ -2,6 +2,34 @@
 import os
 import subprocess
 from langchain_core.tools import tool
+from langchain_community.document_loaders import NotionDBLoader
+from datetime import datetime, timedelta
+
+@tool
+def read_notion_database(integration_token: str, database_id: str) -> str:
+    """Notion API를 통해 최근 7일간 수정된 업무 일지를 가져옵니다."""
+    try:
+        # 7일 전 날짜 계산
+        seven_days_ago = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+        
+        # Notion 필터 설정 (최근 7일 이내 수정된 항목)
+        filter_obj = {
+            "timestamp": "last_edited_time",
+            "last_edited_time": {
+                "on_or_after": seven_days_ago
+            }
+        }
+        
+        loader = NotionDBLoader(
+            integration_token=integration_token,
+            database_id=database_id,
+            filter_object=filter_obj
+        )
+        
+        docs = loader.load()
+        return "\n\n".join([doc.page_content for doc in docs]) if docs else "최근 7일간 노션에 기록된 업무 일지가 없습니다."
+    except Exception as e:
+        return f"노션 데이터 가져오기 실패: {str(e)}"
 
 @tool
 def read_daily_notes(folder_path: str = "./daily_notes") -> str:

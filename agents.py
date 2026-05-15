@@ -1,3 +1,4 @@
+import os
 from typing import TypedDict, Annotated
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate
@@ -27,11 +28,24 @@ def get_text_content(content) -> str:
 
 # 2. 노드 1: 수집가 (Collector) - 도구를 직접 호출하여 데이터 수집
 def collector_node(state: ReportState) -> ReportState:
-    print("🕵️ [Collector] 일일 메모와 Git 로그를 수집합니다...")
+    print("🕵️ [Collector] 일일 메모, Git 로그, 그리고 노션 데이터를 수집합니다...")
+    
+    # 도구 호출
     notes = tools.read_daily_notes.invoke({"folder_path": "./daily_notes"})
     git_logs = tools.get_git_logs.invoke({"repo_path": "."})
     
-    combined_data = f"### 일일 메모 ###\n{notes}\n\n### Git 커밋 로그 ###\n{git_logs}"
+    # 노션 데이터 수집
+    notion_token = os.getenv("NOTION_API_KEY")
+    notion_db_id = os.getenv("NOTION_DATABASE_ID")
+    
+    notion_data = "노션 설정이 되어 있지 않습니다."
+    if notion_token and notion_db_id:
+        notion_data = tools.read_notion_database.invoke({
+            "integration_token": notion_token, 
+            "database_id": notion_db_id
+        })
+    
+    combined_data = f"### 일일 메모 ###\n{notes}\n\n### Git 커밋 로그 ###\n{git_logs}\n\n### 노션 업무 일지 ###\n{notion_data}"
     return {"raw_data": combined_data}
 
 # 3. 노드 2: 분석가 (Analyzer) - 수집된 데이터를 카테고리화
