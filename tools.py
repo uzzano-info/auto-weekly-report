@@ -1,9 +1,38 @@
-# tools.py
 import os
 import subprocess
 from langchain_core.tools import tool
 from langchain_community.document_loaders import NotionDBLoader
 from datetime import datetime, timedelta
+from pydantic import BaseModel, Field, field_validator
+from presidio_analyzer import AnalyzerEngine, PatternRecognizer, Pattern
+from presidio_analyzer.nlp_engine import NlpEngineProvider
+from presidio_anonymizer import AnonymizerEngine
+
+# [보안] 한국어 NLP 엔진 명시적 연결 설정 (Shift-Left DLP 용)
+configuration = {
+    "nlp_engine_name": "spacy",
+    "models": [{"lang_code": "ko", "model_name": "ko_core_news_lg"}]
+}
+provider = NlpEngineProvider(nlp_configuration=configuration)
+nlp_engine = provider.create_engine()
+
+# Analyzer 및 Anonymizer 초기화
+analyzer = AnalyzerEngine(nlp_engine=nlp_engine, supported_languages=["ko"])
+anonymizer = AnonymizerEngine()
+
+# 한국어 주민번호(RRN) 커스텀 패턴 추가
+rrn_pattern = Pattern(name="rrn_pattern", regex=r"\b\d{6}[- ]?\d{7}\b", score=1.0)
+rrn_recognizer = PatternRecognizer(supported_entity="KR_RRN", patterns=[rrn_pattern], supported_language="ko")
+analyzer.registry.add_recognizer(rrn_recognizer)
+
+def mask_sensitive_data(text: str) -> str:
+    """텍스트 내의 PII를 [REDACTED]로 마스킹합니다."""
+    # 최대 10,000자 제한 (DoS 방어)
+    text = text[:10000] 
+    
+    results = analyzer.analyze(text=text, entities=["KR_RRN", "EMAIL_ADDRESS", "PHONE_NUMBER"], language="ko")
+    anonymized_result = anonymizer.anonymize(text=text, analyzer_results=results)
+    return anonymized_result.text
 
 @tool
 def read_notion_database(integration_token: str, database_id: str) -> str:
@@ -31,7 +60,17 @@ def read_notion_database(integration_token: str, database_id: str) -> str:
     except Exception as e:
         return f"노션 데이터 가져오기 실패: {str(e)}"
 
-@tool
+class DailyNotesInput(BaseModel):
+    folder_path: str = Field(default="./daily_notes", description="메모 파일이 저장된 폴더 경로")
+
+    @field_validator("folder_path")
+    def validate_path(cls, v):
+        # [ASI02] 경로 탐색 공격(Path Traversal) 차단
+        if ".." in v or v.startswith("/"):
+            raise ValueError("허용되지 않은 경로 접근입니다 (보안 정책 위반).")
+        return v
+
+@tool("read_daily_notes", args_schema=DailyNotesInput)
 def read_daily_notes(folder_path: str = "./daily_notes") -> str:
     """지정된 폴더에 있는 모든 일일 메모(.txt, .md) 파일의 내용을 읽어옵니다."""
     if not os.path.exists(folder_path):
